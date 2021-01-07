@@ -69,6 +69,7 @@ static VOLUME_CONTROLLER_VALUES: &[&str] = &[
     "alsa",
     #[cfg(feature = "alsa_backend")]
     "alsa_linear",
+    "none",
 ];
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, StructOpt)]
