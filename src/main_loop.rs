@@ -9,7 +9,7 @@ use librespot::{
     },
     core::{
         cache::Cache,
-        config::{ConnectConfig, DeviceType, SessionConfig},
+        config::{ConnectConfig, DeviceType, SessionConfig, VolumeCtrl},
         session::Session,
     },
     playback::{
@@ -94,11 +94,12 @@ pub(crate) struct MainLoopState {
     pub(crate) session_config: SessionConfig,
     pub(crate) handle: Handle,
     pub(crate) autoplay: bool,
-    pub(crate) linear_volume: bool,
+    pub(crate) volume_ctrl: VolumeCtrl,
     pub(crate) initial_volume: Option<u16>,
     pub(crate) running_event_program: Option<Child>,
     pub(crate) shell: String,
     pub(crate) device_type: DeviceType,
+    pub(crate) use_mpris: bool,
 }
 
 impl Future for MainLoopState {
@@ -169,7 +170,7 @@ impl Future for MainLoopState {
                         name: self.spotifyd_state.device_name.clone(),
                         device_type: self.device_type,
                         volume: self.initial_volume.unwrap_or_else(|| mixer.volume()),
-                        linear_volume: self.linear_volume,
+                        volume_ctrl: self.volume_ctrl.clone(),
                     },
                     session.clone(),
                     player,
@@ -179,12 +180,14 @@ impl Future for MainLoopState {
                 let shared_spirc = Rc::new(spirc);
                 self.librespot_connection.spirc = Some(shared_spirc.clone());
 
-                self.spotifyd_state.dbus_mpris_server = new_dbus_server(
-                    session,
-                    self.handle.clone(),
-                    shared_spirc,
-                    self.spotifyd_state.device_name.clone(),
-                );
+                if self.use_mpris {
+                    self.spotifyd_state.dbus_mpris_server = new_dbus_server(
+                        session,
+                        self.handle.clone(),
+                        shared_spirc,
+                        self.spotifyd_state.device_name.clone(),
+                    );
+                }
             } else if let Async::Ready(_) = self.spotifyd_state.ctrl_c_stream.poll().unwrap() {
                 if !self.spotifyd_state.shutting_down {
                     if let Some(ref spirc) = self.librespot_connection.spirc {

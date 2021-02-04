@@ -3,6 +3,7 @@ use crate::{
     process::run_program,
     utils,
 };
+use color_eyre::Report;
 use gethostname::gethostname;
 use librespot::{
     core::{cache::Cache, config::DeviceType as LSDeviceType, config::SessionConfig, version},
@@ -277,6 +278,14 @@ pub struct SharedConfigValues {
     #[cfg_attr(not(feature = "dbus_keyring"), structopt(skip), serde(skip))]
     use_keyring: bool,
 
+    #[cfg_attr(
+        feature = "dbus_mpris",
+        structopt(long),
+        serde(alias = "use-mpris", default)
+    )]
+    #[cfg_attr(not(feature = "dbus_mpris"), structopt(skip), serde(skip))]
+    use_mpris: Option<bool>,
+
     /// A command that can be used to retrieve the Spotify account password
     #[structopt(
         conflicts_with = "password",
@@ -429,6 +438,7 @@ impl fmt::Debug for SharedConfigValues {
             .field("password", &password_value)
             .field("password_cmd", &password_cmd_value)
             .field("use_keyring", &self.use_keyring)
+            .field("use_mpris", &self.use_mpris)
             .field("on_song_change_hook", &self.on_song_change_hook)
             .field("cache_path", &self.cache_path)
             .field("no-audio-cache", &self.no_audio_cache)
@@ -450,12 +460,12 @@ impl fmt::Debug for SharedConfigValues {
 }
 
 impl CliConfig {
-    pub fn load_config_file_values(&mut self) {
+    pub fn load_config_file_values(&mut self) -> Result<(), Report> {
         let config_file_path = match self.config_path.clone().or_else(get_config_file) {
             Some(p) => p,
             None => {
                 info!("No config file specified. Running with default values");
-                return;
+                return Ok(());
             }
         };
         info!("Loading config from {:?}", &config_file_path);
@@ -464,16 +474,18 @@ impl CliConfig {
             Ok(s) => s,
             Err(e) => {
                 info!("Failed reading config file: {}", e);
-                return;
+                return Ok(());
             }
         };
 
-        let config_content: FileConfig = toml::from_str(&content).unwrap();
+        let config_content: FileConfig = toml::from_str(&content)?;
 
         // The call to get_merged_sections consumes the FileConfig!
         if let Some(merged_sections) = config_content.get_merged_sections() {
             self.shared_config.merge_with(merged_sections);
         }
+
+        Ok(())
     }
 }
 
@@ -504,7 +516,8 @@ impl SharedConfigValues {
             on_song_change_hook,
             zeroconf_port,
             proxy,
-            device_type
+            device_type,
+            use_mpris
         );
 
         // Handles boolean merging.
@@ -537,6 +550,7 @@ pub(crate) struct SpotifydConfig {
     pub(crate) password: Option<String>,
     #[allow(unused)]
     pub(crate) use_keyring: bool,
+    pub(crate) use_mpris: bool,
     pub(crate) cache: Option<Cache>,
     pub(crate) backend: Option<String>,
     pub(crate) audio_device: Option<String>,
@@ -588,7 +602,7 @@ pub(crate) fn get_internal_config(config: CliConfig) -> SpotifydConfig {
         .shared_config
         .initial_volume
         .map(|input| match input.parse::<i16>() {
-            Ok(v) if 0 <= v && v <= 100 => Some(v),
+            Ok(v) if (0..=100).contains(&v) => Some(v),
             _ => {
                 warn!("Could not parse initial_volume (must be in the range 0-100)");
                 None
@@ -616,14 +630,11 @@ pub(crate) fn get_internal_config(config: CliConfig) -> SpotifydConfig {
         .unwrap_or(DeviceType::Speaker)
         .to_string();
 
-    let pid = config
-        .pid
-        .map(|f| {
-            f.into_os_string()
-                .into_string()
-                .expect("Failed to convert PID file path to valid Unicode")
-        })
-        .or_else(|| None);
+    let pid = config.pid.map(|f| {
+        f.into_os_string()
+            .into_string()
+            .expect("Failed to convert PID file path to valid Unicode")
+    });
 
     let shell = utils::get_shell().unwrap_or_else(|| {
         info!("Unable to identify shell. Defaulting to \"sh\".");
@@ -672,6 +683,7 @@ pub(crate) fn get_internal_config(config: CliConfig) -> SpotifydConfig {
         username,
         password,
         use_keyring: config.shared_config.use_keyring,
+        use_mpris: config.shared_config.use_mpris.unwrap_or(true),
         cache,
         backend: Some(backend),
         audio_device: config.shared_config.device,
@@ -684,6 +696,7 @@ pub(crate) fn get_internal_config(config: CliConfig) -> SpotifydConfig {
             bitrate,
             normalisation: config.shared_config.volume_normalisation,
             normalisation_pregain,
+            gapless: true,
         },
         session_config: SessionConfig {
             user_agent: version::version_string(),
@@ -706,11 +719,15 @@ mod tests {
 
     #[test]
     fn test_section_merging() {
-        let mut spotifyd_section = SharedConfigValues::default();
-        spotifyd_section.password = Some("123456".to_string());
+        let mut spotifyd_section = SharedConfigValues {
+            password: Some("123456".to_string()),
+            ..Default::default()
+        };
 
-        let mut global_section = SharedConfigValues::default();
-        global_section.username = Some("testUserName".to_string());
+        let global_section = SharedConfigValues {
+            username: Some("testUserName".to_string()),
+            ..Default::default()
+        };
 
         // The test only makes sense if both sections differ.
         assert!(spotifyd_section != global_section, true);
