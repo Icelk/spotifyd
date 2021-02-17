@@ -12,7 +12,7 @@ impl Mixer for NoMixer {
     fn stop(&self) {}
 
     fn volume(&self) -> u16 {
-        0
+        65535
     }
 
     fn set_volume(&self, _volume: u16) {}
