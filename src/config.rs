@@ -224,6 +224,37 @@ impl From<Bitrate> for LSBitrate {
     }
 }
 
+#[cfg(feature = "dbus_mpris")]
+static DBUSTYPE_VALUES: &[&str] = &["session", "system"];
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, StructOpt)]
+#[serde(rename_all = "snake_case")]
+pub enum DBusType {
+    Session,
+    System,
+}
+
+impl FromStr for DBusType {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "session" => Ok(DBusType::Session),
+            "system" => Ok(DBusType::System),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl ToString for DBusType {
+    fn to_string(&self) -> String {
+        match self {
+            DBusType::Session => "session".to_string(),
+            DBusType::System => "system".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Default, StructOpt)]
 #[structopt(
     about = "A Spotify daemon",
@@ -283,6 +314,7 @@ pub struct SharedConfigValues {
     #[cfg_attr(not(feature = "dbus_keyring"), structopt(skip), serde(skip))]
     use_keyring: bool,
 
+    /// Enables the MPRIS interface
     #[cfg_attr(
         feature = "dbus_mpris",
         structopt(long),
@@ -290,6 +322,14 @@ pub struct SharedConfigValues {
     )]
     #[cfg_attr(not(feature = "dbus_mpris"), structopt(skip), serde(skip))]
     use_mpris: Option<bool>,
+
+    /// The Bus-type to use for the MPRIS interface
+    #[cfg_attr(
+        feature = "dbus_mpris",
+        structopt(long, possible_values = &DBUSTYPE_VALUES, value_name = "string")
+    )]
+    #[cfg_attr(not(feature = "dbus_mpris"), structopt(skip), serde(skip))]
+    dbus_type: Option<DBusType>,
 
     /// A command that can be used to retrieve the Spotify account password
     #[structopt(
@@ -449,6 +489,7 @@ impl fmt::Debug for SharedConfigValues {
             .field("password_cmd", &password_cmd_value)
             .field("use_keyring", &self.use_keyring)
             .field("use_mpris", &self.use_mpris)
+            .field("dbus_type", &self.dbus_type)
             .field("on_song_change_hook", &self.on_song_change_hook)
             .field("cache_path", &self.cache_path)
             .field("no-audio-cache", &self.no_audio_cache)
@@ -530,7 +571,8 @@ impl SharedConfigValues {
             proxy,
             device_type,
             use_mpris,
-            max_cache_size
+            max_cache_size,
+            dbus_type
         );
 
         // Handles boolean merging.
@@ -565,6 +607,7 @@ pub(crate) struct SpotifydConfig {
     #[allow(unused)]
     pub(crate) use_keyring: bool,
     pub(crate) use_mpris: bool,
+    pub(crate) dbus_type: DBusType,
     pub(crate) cache: Option<Cache>,
     pub(crate) backend: Option<String>,
     pub(crate) audio_device: Option<String>,
@@ -645,6 +688,7 @@ pub(crate) fn get_internal_config(config: CliConfig) -> SpotifydConfig {
 
     let normalisation_pregain = config.shared_config.normalisation_pregain.unwrap_or(0.0f32);
 
+    let dbus_type = config.shared_config.dbus_type.unwrap_or(DBusType::Session);
     let autoplay = config.shared_config.autoplay;
 
     let device_type = config
@@ -722,6 +766,7 @@ pub(crate) fn get_internal_config(config: CliConfig) -> SpotifydConfig {
         password,
         use_keyring: config.shared_config.use_keyring,
         use_mpris: config.shared_config.use_mpris.unwrap_or(true),
+        dbus_type,
         cache,
         backend: Some(backend),
         audio_device: config.shared_config.device,
