@@ -1,11 +1,6 @@
 #[cfg(feature = "alsa_backend")]
 use crate::alsa_mixer;
-<<<<<<< HEAD
-use crate::{config, main_loop, no_mixer};
-use futures::{self, Future};
-=======
 use crate::{config, main_loop};
->>>>>>> upstream/master
 #[cfg(feature = "dbus_keyring")]
 use keyring::Keyring;
 use librespot_connect::discovery::discovery;
