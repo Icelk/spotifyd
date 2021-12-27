@@ -1,4 +1,4 @@
-use librespot::playback::mixer::{AudioFilter, Mixer, MixerConfig};
+use librespot_playback::mixer::{AudioFilter, Mixer, MixerConfig};
 use std::sync::Mutex;
 
 pub struct NoMixer {

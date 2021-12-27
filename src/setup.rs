@@ -35,7 +35,7 @@ pub(crate) fn initial_state(config: config::SpotifydConfig) -> main_loop::MainLo
             }
             config::VolumeController::None => {
                 info!("Using no volume controller.");
-                Box::new(|| Box::new(no_mixer::NoMixer::open(None)) as Box<dyn Mixer>)
+                Box::new(|| Box::new(crate::no_mixer::NoMixer::open(None)) as Box<dyn Mixer>)
                     as Box<dyn FnMut() -> Box<dyn Mixer>>
             }
             _ => {
