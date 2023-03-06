@@ -347,48 +347,21 @@ async fn create_dbus_server(
         let mv_device_name = device_name.clone();
         let sp_client = Arc::clone(&spotify_api_client);
         b.method("OpenUri", ("uri",), (), move |_, _, (uri,): (String,)| {
-            struct AnyContextId(Box<dyn PlayContextId>);
-
-            impl Id for AnyContextId {
-                fn id(&self) -> &str {
-                    self.0.id()
-                }
-
-                fn _type(&self) -> Type {
-                    self.0._type()
-                }
-
-                fn _type_static() -> Type
-                where
-                    Self: Sized,
-                {
-                    unreachable!("never called");
-                }
-
-                unsafe fn from_id_unchecked(_id: &str) -> Self
-                where
-                    Self: Sized,
-                {
-                    unreachable!("never called");
-                }
-            }
-            impl PlayContextId for AnyContextId {}
-
             enum Uri {
-                Playable(Box<dyn PlayableId>),
-                Context(AnyContextId),
+                Context(PlayContextId<'static>),
+                Playable(PlayableId<'static>),
             }
 
             impl Uri {
                 fn from_id(id_type: Type, id: &str) -> Result<Uri, IdError> {
                     use Uri::*;
                     let uri = match id_type {
-                        Type::Track => Playable(Box::new(TrackId::from_id(id)?)),
-                        Type::Episode => Playable(Box::new(EpisodeId::from_id(id)?)),
-                        Type::Artist => Context(AnyContextId(Box::new(ArtistId::from_id(id)?))),
-                        Type::Album => Context(AnyContextId(Box::new(AlbumId::from_id(id)?))),
-                        Type::Playlist => Context(AnyContextId(Box::new(PlaylistId::from_id(id)?))),
-                        Type::Show => Context(AnyContextId(Box::new(ShowId::from_id(id)?))),
+                        Type::Track => Playable(TrackId::from_id(id)?.into_static().into()),
+                        Type::Episode => Playable(EpisodeId::from_id(id)?.into_static().into()),
+                        Type::Artist => Context(ArtistId::from_id(id)?.into_static().into()),
+                        Type::Album => Context(AlbumId::from_id(id)?.into_static().into()),
+                        Type::Playlist => Context(PlaylistId::from_id(id)?.into_static().into()),
+                        Type::Show => Context(ShowId::from_id(id)?.into_static().into()),
                         Type::User | Type::Collection => return Err(IdError::InvalidType),
                     };
                     Ok(uri)
@@ -429,15 +402,15 @@ async fn create_dbus_server(
                         let _ = sp_client.start_uris_playback(
                             Some(id.as_ref()),
                             device_id.as_deref(),
-                            Some(Offset::for_position(0)),
+                            Some(Offset::Position(0)),
                             None,
                         );
                     }
                     Uri::Context(id) => {
                         let _ = sp_client.start_context_playback(
-                            &id,
+                            id,
                             device_id.as_deref(),
-                            Some(Offset::for_position(0)),
+                            Some(Offset::Position(0)),
                             None,
                         );
                     }
@@ -630,15 +603,14 @@ async fn create_dbus_server(
                 if let Some(track_id) = track_id {
                     let item = match track_id.audio_type {
                         SpotifyAudioType::Track => {
-                            let track_id = TrackId::from_id(&track_id.to_base62()).unwrap();
-                            let track =
-                                spotify_api_client.track(&track_id).map(PlayableItem::Track);
+                            let track_id = TrackId::from_id(track_id.to_base62()).unwrap();
+                            let track = spotify_api_client.track(track_id).map(PlayableItem::Track);
                             Some(track)
                         }
                         SpotifyAudioType::Podcast => {
-                            let id = EpisodeId::from_id(&track_id.to_base62()).unwrap();
+                            let id = EpisodeId::from_id(track_id.to_base62()).unwrap();
                             let episode = spotify_api_client
-                                .get_an_episode(&id, None)
+                                .get_an_episode(id, None)
                                 .map(PlayableItem::Episode);
                             Some(episode)
                         }
