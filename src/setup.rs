@@ -78,6 +78,12 @@ pub(crate) fn initial_state(config: config::SpotifydConfig) -> main_loop::MainLo
     let autoplay = config.autoplay;
     let device_id = session_config.device_id.clone();
 
+    let default_volume_ctrl = if matches!(config.volume_controller, config::VolumeController::None)
+    {
+        VolumeCtrl::Fixed
+    } else {
+        VolumeCtrl::default()
+    };
     #[cfg(feature = "alsa_backend")]
     let volume_ctrl = if matches!(
         config.volume_controller,
@@ -85,11 +91,11 @@ pub(crate) fn initial_state(config: config::SpotifydConfig) -> main_loop::MainLo
     ) {
         VolumeCtrl::Linear
     } else {
-        VolumeCtrl::default()
+        default_volume_ctrl
     };
 
     #[cfg(not(feature = "alsa_backend"))]
-    let volume_ctrl = VolumeCtrl::default();
+    let volume_ctrl = default_volume_ctrl;
 
     let zeroconf_port = config.zeroconf_port.unwrap_or(0);
 
